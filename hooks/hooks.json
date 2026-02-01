@@ -1,0 +1,16 @@
+{
+  "description": "TLP file access control hook",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/tlp-guard-wrapper.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

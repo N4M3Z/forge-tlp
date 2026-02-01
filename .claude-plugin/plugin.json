@@ -1,0 +1,6 @@
+{
+  "name": "context-tlp",
+  "version": "0.1.0",
+  "description": "Traffic Light Protocol (TLP) file access control. Classifies files as RED/AMBER/GREEN/CLEAR and enforces read/write policies. Includes safe-read (inline redaction) and blind-metadata (bulk YAML frontmatter ops).",
+  "author": { "name": "N4M3Z" }
+}

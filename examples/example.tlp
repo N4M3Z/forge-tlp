@@ -1,0 +1,28 @@
+# TLP (Traffic Light Protocol) defaults by path pattern
+# Patterns use glob-style matching against directory-relative paths
+# First match wins. Unlisted files default to AMBER.
+#
+# RED    — Blocked. No AI access.
+# AMBER  — Read blocked. Requires user approval, then read via safe-read
+#          (strips inline #tlp/red sections). Edit/Write allowed with warning.
+# GREEN  — Open. AI can read and reference freely.
+# CLEAR  — Public. Can appear in outputs and commits.
+
+RED:
+  - "*.pdf"
+  - "*.docx"
+  - "*.xlsx"
+  - "Contacts/**"
+  - "Documents/**"
+
+AMBER:
+  - "Journals/**"
+  - "Identity.md"
+
+GREEN:
+  - "Topics/**"
+  - "Templates/**"
+
+CLEAR:
+  - ".tlp"
+  - "README.md"
