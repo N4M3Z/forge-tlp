@@ -1,0 +1,4 @@
+---
+tlp: PURPLE
+---
+Bad value

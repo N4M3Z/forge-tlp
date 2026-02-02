@@ -24,7 +24,7 @@ fn main() -> ExitCode {
     let content = match fs::read_to_string(file_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Cannot read {}: {}", file_path, e);
+            eprintln!("Cannot read {file_path}: {e}");
             return ExitCode::from(1);
         }
     };
@@ -33,9 +33,12 @@ fn main() -> ExitCode {
     let (output, secrets_found) = redact::redact_secrets(&tlp_redacted);
 
     if secrets_found {
-        eprintln!("⚠ WARNING: secret(s) detected and redacted in {}. Consider rotating the exposed key(s).", file_path);
+        eprintln!(
+            "⚠ WARNING: secret(s) detected and redacted in {file_path}. \
+             Consider rotating the exposed key(s)."
+        );
     }
 
-    print!("{}", output);
+    print!("{output}");
     ExitCode::SUCCESS
 }

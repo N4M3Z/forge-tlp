@@ -1,7 +1,32 @@
+#![allow(deprecated)] // Command::cargo_bin is the standard assert_cmd API
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use tempfile::tempdir;
+
+// ─── Fixture constants ───
+
+const CONFIG_RED_PDF: &str = include_str!("fixtures/configs/red_pdf.tlp");
+const CONFIG_GREEN_MD: &str = include_str!("fixtures/configs/green_md.tlp");
+const CONFIG_AMBER_MD: &str = include_str!("fixtures/configs/amber_md.tlp");
+
+const CONTENT_PLAIN: &str = include_str!("fixtures/content/plain.md");
+const CONTENT_WITH_REDACTION: &str = include_str!("fixtures/content/with_redaction.md");
+const CONTENT_MULTIPLE_REDACTIONS: &str = include_str!("fixtures/content/multiple_redactions.md");
+const CONTENT_UNTERMINATED_RED: &str = include_str!("fixtures/content/unterminated_red.md");
+const CONTENT_WITH_API_KEY: &str = include_str!("fixtures/content/with_api_key.md");
+const CONTENT_WITH_GITLAB_TOKEN: &str = include_str!("fixtures/content/with_gitlab_token.md");
+const CONTENT_SHORT_SK: &str = include_str!("fixtures/content/short_sk_false_positive.md");
+const CONTENT_FULL_PIPELINE: &str = include_str!("fixtures/content/full_pipeline.md");
+const CONTENT_FRONTMATTER_RED: &str = include_str!("fixtures/content/frontmatter_red.md");
+const CONTENT_COMPLEX_MARKDOWN: &str = include_str!("fixtures/content/complex_markdown.md");
+const CONTENT_SOURCE_CODE: &str = include_str!("fixtures/content/source_code.md");
+const CONTENT_INLINE_REDACTION: &str = include_str!("fixtures/content/inline_redaction.md");
+const CONTENT_INLINE_UNTERMINATED: &str = include_str!("fixtures/content/inline_unterminated.md");
+const CONTENT_WITH_STRIPE_KEY: &str = include_str!("fixtures/content/with_stripe_key.md");
+const CONTENT_WITH_AWS_KEY: &str = include_str!("fixtures/content/with_aws_key.md");
+const CONTENT_MULTIPLE_SECRETS: &str = include_str!("fixtures/content/multiple_secrets.md");
 
 // ─── Basic usage ───
 
@@ -30,14 +55,14 @@ fn nonexistent_file_exits_1() {
 fn plain_file_outputs_content() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(&file, "Hello, world!\nLine two.\n").unwrap();
+    fs::write(&file, CONTENT_PLAIN).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
         .arg(file.to_str().unwrap())
         .assert()
         .success()
-        .stdout("Hello, world!\nLine two.\n");
+        .stdout(CONTENT_PLAIN);
 }
 
 // ─── TLP redaction ───
@@ -46,11 +71,7 @@ fn plain_file_outputs_content() {
 fn redacts_tlp_red_section() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(
-        &file,
-        "Public\n#tlp/red\nSecret line 1\nSecret line 2\n#tlp/amber\nMore public\n",
-    )
-    .unwrap();
+    fs::write(&file, CONTENT_WITH_REDACTION).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
@@ -65,11 +86,7 @@ fn redacts_tlp_red_section() {
 fn redacts_multiple_sections() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(
-        &file,
-        "A\n#tlp/red\nX\n#tlp/amber\nB\n#tlp/red\nY\n#tlp/green\nC\n",
-    )
-    .unwrap();
+    fs::write(&file, CONTENT_MULTIPLE_REDACTIONS).unwrap();
 
     let output = Command::cargo_bin("safe-read")
         .unwrap()
@@ -88,7 +105,7 @@ fn redacts_multiple_sections() {
 fn redacts_unterminated_block() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(&file, "Before\n#tlp/red\nSecret to EOF\n").unwrap();
+    fs::write(&file, CONTENT_UNTERMINATED_RED).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
@@ -105,7 +122,7 @@ fn redacts_unterminated_block() {
 fn redacts_api_keys() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(&file, "key: sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA\n").unwrap();
+    fs::write(&file, CONTENT_WITH_API_KEY).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
@@ -121,7 +138,7 @@ fn redacts_api_keys() {
 fn redacts_gitlab_token() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(&file, "GITLAB_TOKEN=glpat-ABCDEFGHIJKLMNOPQRST\n").unwrap();
+    fs::write(&file, CONTENT_WITH_GITLAB_TOKEN).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
@@ -136,14 +153,14 @@ fn redacts_gitlab_token() {
 fn no_false_positive_on_short_sk() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(&file, "I want to sk-ip this line\n").unwrap();
+    fs::write(&file, CONTENT_SHORT_SK).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
         .arg(file.to_str().unwrap())
         .assert()
         .success()
-        .stdout("I want to sk-ip this line\n");
+        .stdout(CONTENT_SHORT_SK);
 }
 
 // ─── Combined TLP + secret redaction ───
@@ -152,11 +169,7 @@ fn no_false_positive_on_short_sk() {
 fn full_pipeline_redacts_both() {
     let dir = tempdir().unwrap();
     let file = dir.path().join("test.md");
-    fs::write(
-        &file,
-        "public\n#tlp/red\ntop secret\n#tlp/amber\nkey: sk-ant-api03-REALKEY12345678901234\n",
-    )
-    .unwrap();
+    fs::write(&file, CONTENT_FULL_PIPELINE).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
@@ -174,7 +187,7 @@ fn full_pipeline_redacts_both() {
 #[test]
 fn refuses_red_file_by_path() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join(".tlp"), "RED:\n  - \"*.pdf\"\n").unwrap();
+    fs::write(dir.path().join(".tlp"), CONFIG_RED_PDF).unwrap();
     let file = dir.path().join("secret.pdf");
     fs::write(&file, "binary content").unwrap();
 
@@ -189,9 +202,9 @@ fn refuses_red_file_by_path() {
 #[test]
 fn refuses_red_file_by_frontmatter() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join(".tlp"), "GREEN:\n  - \"*.md\"\n").unwrap();
+    fs::write(dir.path().join(".tlp"), CONFIG_GREEN_MD).unwrap();
     let file = dir.path().join("secret.md");
-    fs::write(&file, "---\ntlp: RED\n---\nTop secret\n").unwrap();
+    fs::write(&file, CONTENT_FRONTMATTER_RED).unwrap();
 
     Command::cargo_bin("safe-read")
         .unwrap()
@@ -204,7 +217,7 @@ fn refuses_red_file_by_frontmatter() {
 #[test]
 fn allows_amber_file() {
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join(".tlp"), "AMBER:\n  - \"*.md\"\n").unwrap();
+    fs::write(dir.path().join(".tlp"), CONFIG_AMBER_MD).unwrap();
     let file = dir.path().join("journal.md");
     fs::write(&file, "diary entry\n").unwrap();
 
@@ -229,4 +242,118 @@ fn file_outside_vault_still_works() {
         .assert()
         .success()
         .stdout("no vault here\n");
+}
+
+// ─── Inline TLP redaction ───
+
+#[test]
+fn redacts_inline_marker() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_INLINE_REDACTION).unwrap();
+
+    Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[REDACTED]"))
+        .stdout(predicate::str::contains("secret information").not())
+        .stdout(predicate::str::contains("that resumes here"));
+}
+
+#[test]
+fn redacts_inline_unterminated_marker() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_INLINE_UNTERMINATED).unwrap();
+
+    Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[REDACTED]"))
+        .stdout(predicate::str::contains("secret to end").not())
+        .stdout(predicate::str::contains("Back to normal content"));
+}
+
+// ─── Expanded secret detection (gitleaks patterns) ───
+
+#[test]
+fn redacts_stripe_key() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_WITH_STRIPE_KEY).unwrap();
+
+    Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[SECRET REDACTED]"))
+        .stdout(predicate::str::contains("rk_prod_").not());
+}
+
+#[test]
+fn redacts_aws_key() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_WITH_AWS_KEY).unwrap();
+
+    Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[SECRET REDACTED]"))
+        .stdout(predicate::str::contains("AKIA").not());
+}
+
+#[test]
+fn multiple_secrets_redacted() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_MULTIPLE_SECRETS).unwrap();
+
+    let output = Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.matches("[SECRET REDACTED]").count(), 2);
+    assert!(!stdout.contains("ghp_"));
+    assert!(!stdout.contains("glpat-"));
+}
+
+// ─── File corruption tests ───
+
+#[test]
+fn complex_markdown_passes_through_unchanged() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("complex.md");
+    fs::write(&file, CONTENT_COMPLEX_MARKDOWN).unwrap();
+
+    Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(CONTENT_COMPLEX_MARKDOWN);
+}
+
+#[test]
+fn source_code_with_hashes_passes_through_unchanged() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("code.md");
+    fs::write(&file, CONTENT_SOURCE_CODE).unwrap();
+
+    Command::cargo_bin("safe-read")
+        .unwrap()
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(CONTENT_SOURCE_CODE);
 }

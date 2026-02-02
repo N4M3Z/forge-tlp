@@ -4,10 +4,81 @@ Traffic Light Protocol (TLP) file access control plugin for Claude Code.
 
 ## What It Does
 
-Enforces sensitivity-based file access policies using a `.tlp` config file.
-Files are classified as RED (blocked), AMBER (requires approval), GREEN (open),
-or CLEAR (public). AMBER reads go through `safe-read`, which strips inline
-`#tlp/red` sections before the AI sees the content.
+Enforces sensitivity-based file access policies following the [Traffic Light Protocol](https://www.cisa.gov/news-events/news/traffic-light-protocol-tlp-definitions-and-usage).
+Files are classified as `RED` (blocked), `AMBER` (requires approval), `GREEN` (open), or `CLEAR` (public) using a `.tlp` config file (YAML syntax) or file metadata.
+`AMBER` reads go through `safe-read`, which strips inline `#tlp/red` sections before the AI sees the content.
+
+The convention is based on Obsidian so it can be used directly with your Obsidian vault provided you use the `tlp:` property or the `#tlp/red` tag to redact files.
+
+## Examples
+
+### `.tlp` config
+
+```yaml
+RED:
+  - "*.pdf"
+  - "Resources/Contacts/**"
+
+AMBER:
+  - "Resources/Journals/**"
+
+GREEN:
+  - "Topics/**"
+
+CLEAR:
+  - ".tlp"
+  - "CLAUDE.md"
+```
+
+### Markdown file with inline redaction
+
+```markdown
+---
+tlp: AMBER
+---
+
+# Meeting Notes
+
+Discussed project timeline with the team.
+
+#tlp/red
+Salary negotiations: offered $150k, counter at $170k.
+#tlp/amber
+
+Next steps: finalize budget by Friday.
+
+Contact Alice at alice@example.com #tlp/red (personal: 555-0123) #tlp/amber for details.
+```
+
+### `safe-read` output
+
+```
+---
+tlp: AMBER
+---
+
+# Meeting Notes
+
+Discussed project timeline with the team.
+
+[REDACTED]
+
+Next steps: finalize budget by Friday.
+
+Contact Alice at alice@example.com [REDACTED] for details.
+```
+
+Block-mode `#tlp/red` sections are replaced with `[REDACTED]`. Inline `#tlp/red` markers redact to the next `#tlp/*` boundary tag or end of line. Any detected secrets (API keys, tokens, credentials) are replaced with `[SECRET REDACTED]` using patterns sourced from [gitleaks](https://github.com/gitleaks/gitleaks).
+
+### RED file blocked by `tlp-guard`
+
+```bash
+$ echo '{"tool_name":"Read","tool_input":{"file_path":"/vault/Resources/Contacts/john.md"}}' \
+  | tlp-guard
+TLP:RED — access blocked for: Resources/Contacts/john.md
+$ echo $?
+2
+```
 
 ## Components
 
@@ -25,8 +96,8 @@ or CLEAR (public). AMBER reads go through `safe-read`, which strips inline
 ### From marketplace
 
 ```
-/plugin marketplace add <owner>/<repo>
-/plugin install context-tlp@pai-plugins
+/plugin marketplace add N4M3Z/forge-plugins
+/plugin install context-tlp@forge-plugins
 ```
 
 ### Local testing
@@ -52,7 +123,7 @@ Whitelist the CLI tools in your project or global `settings.local.json`:
 
 ## Configuration
 
-Create a `.tlp` file at your directory root. See [examples/example.tlp](examples/example.tlp).
+Create a `.tlp` file at your directory root. See [examples/tlp.example.yaml](examples/tlp.example.yaml).
 
 ### Pattern syntax
 
@@ -76,11 +147,11 @@ tlp: RED
 ---
 ```
 
-The effective level is the **more restrictive** of the path-based and frontmatter-based classification. A file can escalate (GREEN path + RED frontmatter = RED) but never downgrade (AMBER path + GREEN frontmatter = AMBER).
+The effective level is the **more restrictive** of the path-based and frontmatter-based classification. A file can escalate (`GREEN` path + `RED` frontmatter = `RED`) but never downgrade (`AMBER` path + `GREEN` frontmatter = `AMBER`).
 
 ### Fail-closed behavior
 
-If `.tlp` exists but cannot be read (permissions, corruption), all files in that vault are treated as RED and access is blocked until the config is fixed. This prevents accidental exposure from a broken config.
+If `.tlp` exists but cannot be read (permissions, corruption), all files in that vault are treated as `RED` and access is blocked until the config is fixed. This prevents accidental exposure from a broken config.
 
 Files outside any vault (no `.tlp` in any parent directory) are not affected by the hook.
 
@@ -98,7 +169,9 @@ Read request
       → GREEN/CLEAR: allow
 ```
 
-`safe-read` also checks TLP classification and refuses RED files.
+Hooks use bash scripts. Windows users need WSL or Git Bash. Claude Code plugin hooks don't currently support `.bat`/`.ps1` natively.
+
+`safe-read` also checks TLP classification and refuses `RED` files.
 
 ## Development
 
@@ -120,21 +193,37 @@ cargo fmt
 
 ```
 src/
-  lib.rs              # Library crate (re-exports modules)
-  tlp.rs              # TLP enum, classify(), pattern matching
-  vault.rs            # Vault discovery (walk up to .tlp)
-  redact.rs           # TLP section redaction + secret detection
-  frontmatter.rs      # YAML frontmatter get/set, .md file listing
+  lib.rs                # Library crate (re-exports modules)
+  tlp/
+    mod.rs              # TLP enum, classify(), pattern matching
+    tests.rs            # Unit tests
+  vault/
+    mod.rs              # Vault discovery (walk up to .tlp)
+    tests.rs            # Unit tests
+  redact/
+    mod.rs              # TLP section redaction + secret detection
+    tests.rs            # Unit tests
+  frontmatter/
+    mod.rs              # YAML frontmatter get/set, .md file listing
+    tests.rs            # Unit tests
   bin/
-    tlp-guard.rs      # PreToolUse hook binary
-    safe-read.rs      # Redacting file reader binary
-    blind-metadata.rs # Frontmatter bulk operations binary
+    tlp-guard.rs        # PreToolUse hook binary
+    safe-read.rs        # Redacting file reader binary
+    blind-metadata.rs   # Frontmatter bulk operations binary
 tests/
-  tlp_guard.rs        # Integration tests for tlp-guard
-  safe_read.rs        # Integration tests for safe-read
-  blind_metadata.rs   # Integration tests for blind-metadata
+  fixtures/
+    configs/            # .tlp config fixtures
+    content/            # .md content fixtures
+  tlp_guard.rs          # Integration tests for tlp-guard
+  safe_read.rs          # Integration tests for safe-read
+  blind_metadata.rs     # Integration tests for blind-metadata
 ```
+
+## References
+
+- [Claude Code Hooks — PreToolUse](https://docs.anthropic.com/en/docs/claude-code/hooks#pretooluse)
+- [gitleaks](https://github.com/gitleaks/gitleaks) — secret detection patterns used by `safe-read`
 
 ## License
 
-MIT
+[EUPL-1.2](LICENSE)

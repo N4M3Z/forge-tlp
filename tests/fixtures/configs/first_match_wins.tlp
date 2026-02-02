@@ -1,0 +1,5 @@
+RED:
+  - "*.md"
+
+GREEN:
+  - "Topics/**"

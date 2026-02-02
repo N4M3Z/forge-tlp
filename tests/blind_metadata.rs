@@ -1,3 +1,5 @@
+#![allow(deprecated)] // Command::cargo_bin is the standard assert_cmd API
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;

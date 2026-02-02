@@ -1,17 +1,30 @@
+#![allow(deprecated)] // Command::cargo_bin is the standard assert_cmd API
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use tempfile::tempdir;
 
-/// Helper: build a JSON hook input string for tlp-guard.
+// ─── Fixture constants ───
+
+const CONFIG_RED_PDF: &str = include_str!("fixtures/configs/red_pdf.tlp");
+const CONFIG_RED_CONTACTS: &str = include_str!("fixtures/configs/red_contacts.tlp");
+const CONFIG_AMBER_JOURNALS: &str = include_str!("fixtures/configs/amber_journals.tlp");
+const CONFIG_GREEN_TOPICS: &str = include_str!("fixtures/configs/green_topics.tlp");
+const CONFIG_CLEAR_README: &str = include_str!("fixtures/configs/clear_readme.tlp");
+const CONFIG_FIRST_MATCH_WINS: &str = include_str!("fixtures/configs/first_match_wins.tlp");
+
+const CONTENT_FRONTMATTER_RED: &str = include_str!("fixtures/content/frontmatter_red.md");
+const CONTENT_FRONTMATTER_GREEN: &str = include_str!("fixtures/content/frontmatter_green.md");
+const CONTENT_FRONTMATTER_AMBER: &str = include_str!("fixtures/content/frontmatter_amber.md");
+const CONTENT_FRONTMATTER_INVALID: &str = include_str!("fixtures/content/frontmatter_invalid.md");
+
+// ─── Helpers ───
+
 fn hook_input(tool_name: &str, file_path: &str) -> String {
-    format!(
-        r#"{{"tool_name":"{}","tool_input":{{"file_path":"{}"}}}}"#,
-        tool_name, file_path
-    )
+    format!(r#"{{"tool_name":"{tool_name}","tool_input":{{"file_path":"{file_path}"}}}}"#)
 }
 
-/// Helper: create a temp vault with a .tlp config and optional files.
 struct TestVault {
     dir: tempfile::TempDir,
 }
@@ -44,7 +57,7 @@ impl TestVault {
 
 #[test]
 fn red_file_blocks_read() {
-    let vault = TestVault::new("RED:\n  - \"*.pdf\"\n");
+    let vault = TestVault::new(CONFIG_RED_PDF);
     vault.create_file("secret.pdf", "binary");
 
     Command::cargo_bin("tlp-guard")
@@ -57,7 +70,7 @@ fn red_file_blocks_read() {
 
 #[test]
 fn red_file_blocks_edit() {
-    let vault = TestVault::new("RED:\n  - \"*.pdf\"\n");
+    let vault = TestVault::new(CONFIG_RED_PDF);
     vault.create_file("secret.pdf", "binary");
 
     Command::cargo_bin("tlp-guard")
@@ -70,7 +83,7 @@ fn red_file_blocks_edit() {
 
 #[test]
 fn red_file_blocks_write() {
-    let vault = TestVault::new("RED:\n  - \"*.pdf\"\n");
+    let vault = TestVault::new(CONFIG_RED_PDF);
     vault.create_file("secret.pdf", "binary");
 
     Command::cargo_bin("tlp-guard")
@@ -83,7 +96,7 @@ fn red_file_blocks_write() {
 
 #[test]
 fn red_dir_blocks_read() {
-    let vault = TestVault::new("RED:\n  - \"Contacts/**\"\n");
+    let vault = TestVault::new(CONFIG_RED_CONTACTS);
     vault.create_file("Contacts/john.md", "phone");
 
     Command::cargo_bin("tlp-guard")
@@ -98,7 +111,7 @@ fn red_dir_blocks_read() {
 
 #[test]
 fn amber_file_blocks_read_suggests_safe_read() {
-    let vault = TestVault::new("AMBER:\n  - \"Journals/**\"\n");
+    let vault = TestVault::new(CONFIG_AMBER_JOURNALS);
     vault.create_file("Journals/today.md", "diary entry");
 
     Command::cargo_bin("tlp-guard")
@@ -111,7 +124,7 @@ fn amber_file_blocks_read_suggests_safe_read() {
 
 #[test]
 fn amber_file_allows_edit() {
-    let vault = TestVault::new("AMBER:\n  - \"Journals/**\"\n");
+    let vault = TestVault::new(CONFIG_AMBER_JOURNALS);
     vault.create_file("Journals/today.md", "diary entry");
 
     Command::cargo_bin("tlp-guard")
@@ -124,7 +137,7 @@ fn amber_file_allows_edit() {
 
 #[test]
 fn amber_file_allows_write() {
-    let vault = TestVault::new("AMBER:\n  - \"Journals/**\"\n");
+    let vault = TestVault::new(CONFIG_AMBER_JOURNALS);
     vault.create_file("Journals/today.md", "diary entry");
 
     Command::cargo_bin("tlp-guard")
@@ -139,7 +152,7 @@ fn amber_file_allows_write() {
 
 #[test]
 fn green_file_allows_read() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
     vault.create_file("Topics/rust.md", "rust notes");
 
     Command::cargo_bin("tlp-guard")
@@ -151,7 +164,7 @@ fn green_file_allows_read() {
 
 #[test]
 fn clear_file_allows_read() {
-    let vault = TestVault::new("CLEAR:\n  - \"README.md\"\n");
+    let vault = TestVault::new(CONFIG_CLEAR_README);
     vault.create_file("README.md", "hello");
 
     Command::cargo_bin("tlp-guard")
@@ -163,7 +176,7 @@ fn clear_file_allows_read() {
 
 #[test]
 fn green_file_allows_edit() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
     vault.create_file("Topics/rust.md", "rust notes");
 
     Command::cargo_bin("tlp-guard")
@@ -177,7 +190,7 @@ fn green_file_allows_edit() {
 
 #[test]
 fn unmatched_file_defaults_to_amber_blocks_read() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
     vault.create_file("random/notes.md", "stuff");
 
     Command::cargo_bin("tlp-guard")
@@ -229,8 +242,7 @@ fn file_outside_any_vault_allows() {
 
 #[test]
 fn first_match_wins() {
-    // File matches RED before GREEN
-    let vault = TestVault::new("RED:\n  - \"*.md\"\n\nGREEN:\n  - \"Topics/**\"\n");
+    let vault = TestVault::new(CONFIG_FIRST_MATCH_WINS);
     vault.create_file("Topics/rust.md", "rust notes");
 
     Command::cargo_bin("tlp-guard")
@@ -245,11 +257,8 @@ fn first_match_wins() {
 
 #[test]
 fn frontmatter_red_escalates_green_path() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
-    vault.create_file(
-        "Topics/sensitive.md",
-        "---\ntlp: RED\n---\nThis should be blocked\n",
-    );
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
+    vault.create_file("Topics/sensitive.md", CONTENT_FRONTMATTER_RED);
 
     Command::cargo_bin("tlp-guard")
         .unwrap()
@@ -261,8 +270,8 @@ fn frontmatter_red_escalates_green_path() {
 
 #[test]
 fn frontmatter_green_cannot_downgrade_amber_path() {
-    let vault = TestVault::new("AMBER:\n  - \"Journals/**\"\n");
-    vault.create_file("Journals/today.md", "---\ntlp: GREEN\n---\nStill AMBER\n");
+    let vault = TestVault::new(CONFIG_AMBER_JOURNALS);
+    vault.create_file("Journals/today.md", CONTENT_FRONTMATTER_GREEN);
 
     Command::cargo_bin("tlp-guard")
         .unwrap()
@@ -274,11 +283,8 @@ fn frontmatter_green_cannot_downgrade_amber_path() {
 
 #[test]
 fn frontmatter_amber_escalates_green_path() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
-    vault.create_file(
-        "Topics/private.md",
-        "---\ntlp: AMBER\n---\nNeeds approval\n",
-    );
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
+    vault.create_file("Topics/private.md", CONTENT_FRONTMATTER_AMBER);
 
     Command::cargo_bin("tlp-guard")
         .unwrap()
@@ -290,7 +296,7 @@ fn frontmatter_amber_escalates_green_path() {
 
 #[test]
 fn no_frontmatter_uses_path_level() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
     vault.create_file("Topics/normal.md", "No frontmatter here\n");
 
     Command::cargo_bin("tlp-guard")
@@ -302,8 +308,8 @@ fn no_frontmatter_uses_path_level() {
 
 #[test]
 fn invalid_frontmatter_tlp_ignored() {
-    let vault = TestVault::new("GREEN:\n  - \"Topics/**\"\n");
-    vault.create_file("Topics/weird.md", "---\ntlp: PURPLE\n---\nBad value\n");
+    let vault = TestVault::new(CONFIG_GREEN_TOPICS);
+    vault.create_file("Topics/weird.md", CONTENT_FRONTMATTER_INVALID);
 
     // Invalid TLP value in frontmatter is ignored — uses path level (GREEN)
     Command::cargo_bin("tlp-guard")
