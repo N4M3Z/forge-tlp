@@ -30,7 +30,37 @@ CLEAR:
   - "CLAUDE.md"
 ```
 
-### Markdown file with inline redaction
+### `tlp-guard` — blocking RED files
+
+`tlp-guard` is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks#pretooluse) that intercepts Read, Edit, and Write tool calls before they execute. Claude Code pipes the tool call as JSON on stdin; the hook resolves the file's TLP level and either allows or blocks it.
+
+Given the `.tlp` config above, `Resources/Contacts/**` is RED. When Claude tries to read a contact file, the hook blocks it:
+
+```bash
+$ echo '{"tool_name":"Read","tool_input":{"file_path":"/vault/Resources/Contacts/john.md"}}' \
+  | tlp-guard
+TLP:RED — access blocked for: Resources/Contacts/john.md
+$ echo $?
+2
+```
+
+Write and Edit calls are blocked the same way — no tool call targeting a RED file gets through:
+
+```bash
+$ echo '{"tool_name":"Edit","tool_input":{"file_path":"/vault/Resources/Contacts/john.md","old_string":"...","new_string":"..."}}' \
+  | tlp-guard
+TLP:RED — access blocked for: Resources/Contacts/john.md
+$ echo $?
+2
+```
+
+Exit code `2` tells Claude Code to deny the tool call. The AI never sees the file content.
+
+### Inline `#tlp/red` redaction
+
+For AMBER files that contain sensitive sections, `safe-read` strips `#tlp/red` regions before the AI sees the content.
+
+**Source file:**
 
 ```markdown
 ---
@@ -50,7 +80,7 @@ Next steps: finalize budget by Friday.
 Contact Alice at alice@example.com #tlp/red (personal: 555-0123) #tlp/amber for details.
 ```
 
-### `safe-read` output
+**`safe-read` output:**
 
 ```
 ---
@@ -69,16 +99,6 @@ Contact Alice at alice@example.com [REDACTED] for details.
 ```
 
 Block-mode `#tlp/red` sections are replaced with `[REDACTED]`. Inline `#tlp/red` markers redact to the next `#tlp/*` boundary tag or end of line. Any detected secrets (API keys, tokens, credentials) are replaced with `[SECRET REDACTED]` using patterns sourced from [gitleaks](https://github.com/gitleaks/gitleaks).
-
-### RED file blocked by `tlp-guard`
-
-```bash
-$ echo '{"tool_name":"Read","tool_input":{"file_path":"/vault/Resources/Contacts/john.md"}}' \
-  | tlp-guard
-TLP:RED — access blocked for: Resources/Contacts/john.md
-$ echo $?
-2
-```
 
 ## Components
 

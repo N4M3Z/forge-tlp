@@ -1,0 +1,72 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Rust CLI plugin for Claude Code. Three binaries, one library crate.
+
+## Build & test
+
+```bash
+cargo test                        # unit + integration
+cargo test tlp::tests             # run one module's unit tests
+cargo test --test safe_read       # run one integration test file
+cargo test test_name              # run a single test by name
+cargo clippy -- -D warnings       # pedantic lints enabled, must pass clean
+cargo fmt --check                 # max_width = 100
+```
+
+## Project layout
+
+```
+src/
+  lib.rs              # re-exports all modules
+  tlp/mod.rs          # TLP enum, classify(), glob pattern matching
+  vault/mod.rs        # vault discovery (walk parents to find .tlp)
+  redact/mod.rs       # #tlp/red section stripping + regex secret detection
+  frontmatter/mod.rs  # YAML frontmatter get/set
+  bin/
+    tlp-guard.rs      # PreToolUse hook — reads JSON from stdin, exits 0/2
+    safe-read.rs      # CLI — redacts then prints to stdout
+    blind-metadata.rs # CLI — frontmatter ops without reading file body
+tests/
+  fixtures/configs/   # .tlp config files for integration tests
+  fixtures/content/   # .md content files for integration tests
+  tlp_guard.rs        # integration tests for tlp-guard
+  safe_read.rs        # integration tests for safe-read
+  blind_metadata.rs   # integration tests for blind-metadata
+```
+
+Each module has a `tests.rs` sibling with unit tests.
+
+## Architecture
+
+Classification pipeline (`tlp::classify_file`):
+
+1. Walk up from file's parent to find vault root (directory containing `.tlp`)
+2. No vault found → `None` (file not governed, hook allows access)
+3. `.tlp` exists but unreadable → `RED` with `config_error: true` (fail-closed)
+4. Parse `.tlp` config: first matching pattern wins, unmatched defaults to `AMBER`
+5. Read file's `tlp:` frontmatter value
+6. Effective level = `most_restrictive(path_level, frontmatter_level)` — frontmatter can escalate but never downgrade
+
+AMBER handling differs by tool: Read is blocked (stderr suggests `safe-read`), Edit/Write are allowed with a warning. This lets the AI modify AMBER files without seeing their full content via Read.
+
+Shell wrappers in `bin/` source `_build.sh` which calls `cargo build --release` on first invocation if the binary is missing. `tlp-guard-wrapper.sh` exits 0 on build failure (graceful degradation — don't block Claude). The CLI wrappers (`safe-read`, `blind-metadata`) exit 1 on build failure.
+
+## Conventions
+
+- No `unsafe` code (forbidden in Cargo.toml)
+- Clippy pedantic — treat warnings as errors
+- Secret detection patterns in `src/redact/mod.rs` are sourced from gitleaks. Use the `SECRET_PATTERNS` const with `concat!` macro. Each pattern gets a comment naming the service.
+- Test fixtures use synthetic tokens that won't trigger GitHub Push Protection. Avoid `sk_test_`, `sk_live_`, `rk_live_`, `xoxb-` prefixes — use `rk_prod_`, `xoxa-` or similar instead.
+- Integration tests use `assert_cmd` + `predicates` + `tempfile`. Write fixture content to a tempdir, run the binary, assert on stdout/stderr/exit code.
+
+## Hook protocol
+
+`tlp-guard` reads a JSON object from stdin:
+
+```json
+{"tool_name":"Read","tool_input":{"file_path":"/absolute/path"}}
+```
+
+Exit codes: `0` = allow, `2` = block. Blocked calls print the reason to stderr.
