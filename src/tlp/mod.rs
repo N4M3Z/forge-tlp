@@ -140,8 +140,12 @@ fn parse_pattern_line(line: &str) -> Option<&str> {
 }
 
 /// Match a relative path against a glob pattern.
-/// Supports: *.ext (extension anywhere), dir/** (prefix), exact match.
+/// Supports: ** (everything), *.ext (extension anywhere), dir/** (prefix), exact match.
 pub fn matches_pattern(path: &str, pattern: &str) -> bool {
+    if pattern == "**" {
+        return true;
+    }
+
     if pattern.starts_with('*') && !pattern.contains('/') {
         let suffix = &pattern[1..];
         return path.ends_with(suffix);

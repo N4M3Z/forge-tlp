@@ -113,3 +113,18 @@ fn test_dir_match_exact_prefix() {
     // This is existing behavior — the pattern protects the directory itself too.
     assert!(matches_pattern("Contacts", "Contacts/**"));
 }
+
+#[test]
+fn test_double_star_matches_everything() {
+    assert!(matches_pattern("any/deep/path.md", "**"));
+    assert!(matches_pattern("file.txt", "**"));
+    assert!(matches_pattern("a", "**"));
+}
+
+#[test]
+fn test_double_star_as_green_catchall() {
+    let config = "AMBER:\n  - \"Players/**\"\n\nGREEN:\n  - \"**\"\n";
+    assert_eq!(classify(Path::new("Players/card.md"), config), Tlp::Amber);
+    assert_eq!(classify(Path::new("Campaigns/scene.md"), config), Tlp::Green);
+    assert_eq!(classify(Path::new("anything.md"), config), Tlp::Green);
+}
