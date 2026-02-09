@@ -119,7 +119,7 @@ Text with [REDACTED]
 Read a file with inline `#tlp/red` sections stripped and secrets redacted:
 
 ```bash
-Plugins/forge-core/modules/forge-tlp/bin/safe-read "/path/to/file.md"
+Modules/forge-tlp/bin/safe-read "/path/to/file.md"
 ```
 
 **Secret detection**: `safe-read` automatically scans for known API key and credential patterns (sourced from [gitleaks](https://github.com/gitleaks/gitleaks)) and replaces them with `[SECRET REDACTED]`. Coverage includes 45+ services: Anthropic, OpenAI, AWS, GCP, GitHub, GitLab, Slack, Stripe, npm, SendGrid, Twilio, MongoDB connection strings, PEM private keys, and many more.
@@ -134,13 +134,13 @@ Bulk YAML frontmatter operations. Useful for managing `tlp:` fields across files
 
 ```bash
 # Set a key on all .md files in a directory
-Plugins/forge-core/modules/forge-tlp/bin/blind-metadata set <directory> <key> <value>
+Modules/forge-tlp/bin/blind-metadata set <directory> <key> <value>
 
 # Get a key from all .md files
-Plugins/forge-core/modules/forge-tlp/bin/blind-metadata get <directory> <key>
+Modules/forge-tlp/bin/blind-metadata get <directory> <key>
 
 # List files missing a key
-Plugins/forge-core/modules/forge-tlp/bin/blind-metadata has <directory> <key>
+Modules/forge-tlp/bin/blind-metadata has <directory> <key>
 ```
 
 Supports absolute paths and vault-relative paths (walks up to find `.tlp` root).
