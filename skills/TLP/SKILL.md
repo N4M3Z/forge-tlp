@@ -1,7 +1,6 @@
 ---
-name: tlp
-description: Traffic Light Protocol (TLP) file access control. This skill should be used when the user asks about TLP levels (RED, AMBER, GREEN, CLEAR), file classification, reading protected files, safe-read, blind-metadata, redacted reading, inline redaction markers, secret detection, .tlp configuration, file access policies, or frontmatter TLP overrides.
-version: 0.2.0
+name: TLP
+description: TLP file access control — RED/AMBER/GREEN/CLEAR classification, safe-read, blind-metadata. USE WHEN accessing protected files or configuring file access policies.
 ---
 
 # Traffic Light Protocol (TLP)
@@ -144,3 +143,6 @@ Modules/forge-tlp/bin/blind-metadata has <directory> <key>
 ```
 
 Supports absolute paths and vault-relative paths (walks up to find `.tlp` root).
+
+!`"${CLAUDE_PLUGIN_ROOT}/hooks/skill-load.sh" 2>/dev/null`
+!`"${CLAUDE_PLUGIN_ROOT}/Modules/forge-tlp/hooks/skill-load.sh" 2>/dev/null`

@@ -1,3 +1,5 @@
 name: forge-tlp
 version: 0.2.0
-description: TLP file access control — classifies files as RED/AMBER/GREEN/CLEAR, enforces read/write policies, inline redaction
+description: TLP file access control — RED/AMBER/GREEN/CLEAR classification, safe-read, blind-metadata. USE WHEN accessing protected files or configuring file access policies.
+events:
+  - PreToolUse

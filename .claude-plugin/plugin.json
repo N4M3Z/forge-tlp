@@ -1,6 +1,8 @@
 {
   "name": "forge-tlp",
   "version": "0.2.0",
-  "description": "Traffic Light Protocol (TLP) file access control. Classifies files as RED/AMBER/GREEN/CLEAR and enforces read/write policies. Includes safe-read (inline redaction) and blind-metadata (bulk YAML frontmatter ops).",
-  "author": { "name": "N4M3Z" }
+  "description": "TLP file access control — RED/AMBER/GREEN/CLEAR classification, safe-read, blind-metadata. USE WHEN accessing protected files or configuring file access policies.",
+  "author": { "name": "N4M3Z" },
+  "hooks": "./hooks/hooks.json",
+  "skills": ["./skills"]
 }
