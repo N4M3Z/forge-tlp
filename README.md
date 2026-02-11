@@ -1,14 +1,22 @@
-# context-tlp
+# forge-tlp
 
-Traffic Light Protocol (TLP) file access control plugin for Claude Code.
+Traffic Light Protocol (TLP) file access control for AI coding tools. Enforces sensitivity-based access policies at the tool level — the AI never sees content it shouldn't.
+
+## Layer
+
+**Behaviour** — part of forge-core's three-layer architecture (Identity / Behaviour / Knowledge). Enforced via `PreToolUse` hook on every Read, Edit, and Write call.
 
 ## What It Does
 
-Enforces sensitivity-based file access policies following the [Traffic Light Protocol](https://www.cisa.gov/news-events/news/traffic-light-protocol-tlp-definitions-and-usage).
-Files are classified as `RED` (blocked), `AMBER` (requires approval), `GREEN` (open), or `CLEAR` (public) using a `.tlp` config file (YAML syntax) or file metadata.
-`AMBER` reads go through `safe-read`, which strips inline `#tlp/red` sections before the AI sees the content.
+Classifies files as `RED` (blocked), `AMBER` (requires approval), `GREEN` (open), or `CLEAR` (public) using a `.tlp` config file (YAML syntax) or frontmatter metadata. `AMBER` reads go through `safe-read`, which strips inline `#tlp/red` sections before the AI sees the content.
 
-The convention is based on Obsidian so it can be used directly with your Obsidian vault provided you use the `tlp:` property or the `#tlp/red` tag to redact files.
+The convention is Obsidian-native — use the `tlp:` frontmatter property or the `#tlp/red` tag to redact sensitive sections inline.
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `TLP` | TLP classification rules and access conventions |
 
 ## Examples
 
@@ -117,13 +125,13 @@ Block-mode `#tlp/red` sections are replaced with `[REDACTED]`. Inline `#tlp/red`
 
 ```
 /plugin marketplace add N4M3Z/forge-plugins
-/plugin install context-tlp@forge-plugins
+/plugin install forge-tlp@forge-plugins
 ```
 
 ### Local testing
 
 ```bash
-claude --plugin-dir /path/to/Plugins/context-tlp
+claude --plugin-dir /path/to/Modules/forge-tlp
 ```
 
 ### Post-install
