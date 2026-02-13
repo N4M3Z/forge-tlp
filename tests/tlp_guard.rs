@@ -107,6 +107,48 @@ fn red_dir_blocks_read() {
         .stderr(predicate::str::contains("TLP:RED"));
 }
 
+// ─── RED: new file creation ───
+
+#[test]
+fn red_dir_allows_write_new_file() {
+    let vault = TestVault::new(CONFIG_RED_CONTACTS);
+    // Don't create the file — it shouldn't exist
+    fs::create_dir_all(vault.path().join("Contacts")).expect("create dir");
+
+    Command::cargo_bin("tlp-guard")
+        .unwrap()
+        .write_stdin(hook_input("Write", &vault.abs("Contacts/new_person.md")))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("new file creation allowed"));
+}
+
+#[test]
+fn red_dir_still_blocks_read_nonexistent_file() {
+    let vault = TestVault::new(CONFIG_RED_CONTACTS);
+    fs::create_dir_all(vault.path().join("Contacts")).expect("create dir");
+
+    Command::cargo_bin("tlp-guard")
+        .unwrap()
+        .write_stdin(hook_input("Read", &vault.abs("Contacts/ghost.md")))
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("TLP:RED"));
+}
+
+#[test]
+fn red_dir_still_blocks_edit_nonexistent_file() {
+    let vault = TestVault::new(CONFIG_RED_CONTACTS);
+    fs::create_dir_all(vault.path().join("Contacts")).expect("create dir");
+
+    Command::cargo_bin("tlp-guard")
+        .unwrap()
+        .write_stdin(hook_input("Edit", &vault.abs("Contacts/ghost.md")))
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("TLP:RED"));
+}
+
 // ─── AMBER file tests ───
 
 #[test]

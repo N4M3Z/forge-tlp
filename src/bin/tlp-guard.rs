@@ -46,8 +46,20 @@ fn main() -> ExitCode {
 
     match classification.level {
         tlp::Tlp::Red => {
-            eprintln!("TLP:RED — access blocked for: {}", classification.rel_path);
-            ExitCode::from(2)
+            // Allow creating new files — nothing to leak if the file doesn't exist yet
+            if tool_name == "Write" && !std::path::Path::new(&file_path).exists() {
+                println!(
+                    "TLP:RED — new file creation allowed in: {}",
+                    classification.rel_path
+                );
+                ExitCode::SUCCESS
+            } else {
+                eprintln!(
+                    "TLP:RED — access blocked for: {}",
+                    classification.rel_path
+                );
+                ExitCode::from(2)
+            }
         }
         tlp::Tlp::Amber => {
             if tool_name == "Read" {
