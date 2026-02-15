@@ -1,6 +1,6 @@
 ---
 name: TLP
-description: TLP file access control — RED/AMBER/GREEN/CLEAR classification, safe-read, blind-metadata. USE WHEN accessing protected files or configuring file access policies.
+description: TLP file access control — RED/AMBER/GREEN/CLEAR classification, .tlp config, frontmatter overrides. USE WHEN accessing protected files or configuring file access policies.
 ---
 
 # Traffic Light Protocol (TLP)
@@ -26,8 +26,8 @@ If the `.tlp` config file exists but cannot be read (e.g., corrupted or permissi
 
 1. You try to Read a file → `tlp-guard` blocks (exit 2)
 2. The block message tells you to ask the user and provides a `safe-read` command
-3. User approves → use the `safe-read` command via Bash
-4. `safe-read` outputs the file with redacted sections marked by inline tags `#tlp/red` (resulting in secrets stripped)
+3. User approves → use the `safe-read` command via Bash (see `/SafeRead` skill)
+4. `safe-read` outputs the file with `#tlp/red` sections and secrets stripped
 5. User declines → do not read the file
 
 ## The `.tlp` Config File
@@ -72,7 +72,7 @@ Valid values: `RED`, `AMBER`, `GREEN`, `CLEAR` (case-insensitive). Unrecognized 
 
 ## Inline Redaction Markers
 
-Within AMBER files, `#tlp/red` marks the start of redacted content. It works in two modes:
+Within AMBER files, `#tlp/red` marks the start of redacted content. Processed by `safe-read` (see `/SafeRead` skill).
 
 ### Block mode
 
@@ -111,38 +111,10 @@ Text with [REDACTED]
 - Each block-mode redacted section is replaced with a single `[REDACTED]` line
 - Each inline redacted span is replaced with `[REDACTED]` in place
 
-## CLI Tools
+## Related Skills
 
-### safe-read
-
-Read a file with inline `#tlp/red` sections stripped and secrets redacted:
-
-```bash
-Modules/forge-tlp/bin/safe-read "/path/to/file.md"
-```
-
-**Secret detection**: `safe-read` automatically scans for known API key and credential patterns (sourced from [gitleaks](https://github.com/gitleaks/gitleaks)) and replaces them with `[SECRET REDACTED]`. Coverage includes 45+ services: Anthropic, OpenAI, AWS, GCP, GitHub, GitLab, Slack, Stripe, npm, SendGrid, Twilio, MongoDB connection strings, PEM private keys, and many more.
-
-A warning is emitted to stderr when secrets are found.
-
-`RED` files are refused entirely — safe-read only handles AMBER and below.
-
-### blind-metadata
-
-Bulk YAML frontmatter operations. Useful for managing `tlp:` fields across files without reading content:
-
-```bash
-# Set a key on all .md files in a directory
-Modules/forge-tlp/bin/blind-metadata set <directory> <key> <value>
-
-# Get a key from all .md files
-Modules/forge-tlp/bin/blind-metadata get <directory> <key>
-
-# List files missing a key
-Modules/forge-tlp/bin/blind-metadata has <directory> <key>
-```
-
-Supports absolute paths and vault-relative paths (walks up to find `.tlp` root).
+- `/SafeRead` — runtime redaction tools (`safe-read`, `blind-metadata`)
+- `/SecretScan` — commit-time secret scanning with gitleaks
 
 !`"${CLAUDE_PLUGIN_ROOT}/hooks/skill-load.sh" 2>/dev/null`
 !`"${CLAUDE_PLUGIN_ROOT}/Modules/forge-tlp/hooks/skill-load.sh" 2>/dev/null`
