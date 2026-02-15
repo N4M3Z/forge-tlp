@@ -192,6 +192,229 @@ fn redact_inline_markers(line: &str) -> String {
     result
 }
 
+// ─── Extraction (inverse of redaction, used by safe-write) ───
+
+/// Redaction marker that replaces #tlp/red blocks in safe-read output.
+pub const REDACTED_MARKER: &str = "[REDACTED]";
+
+/// Redaction marker that replaces secret patterns in safe-read output.
+pub const SECRET_MARKER: &str = "[SECRET REDACTED]";
+
+/// Extract the original content of each #tlp/red block, in document order.
+/// Each entry includes the markers and all hidden lines — exactly what was
+/// replaced by a single `[REDACTED]` in `redact_tlp_sections`.
+pub fn extract_tlp_blocks(content: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut in_redacted = false;
+    let mut current_block = Vec::<String>::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == TLP_RED_MARKER && !in_redacted {
+            in_redacted = true;
+            current_block.clear();
+            current_block.push(line.to_string());
+            continue;
+        }
+
+        if in_redacted {
+            current_block.push(line.to_string());
+            if is_tlp_boundary(trimmed) {
+                blocks.push(current_block.join("\n"));
+                current_block.clear();
+                in_redacted = false;
+            }
+        }
+    }
+
+    // Unterminated block — still captured (matches redact_tlp_sections behavior)
+    if in_redacted && !current_block.is_empty() {
+        blocks.push(current_block.join("\n"));
+    }
+
+    blocks
+}
+
+/// Extract each inline `#tlp/red` redacted span from a line, in order.
+/// Returns the raw text that was replaced by `[REDACTED]` inline.
+fn extract_inline_chunks(line: &str) -> Vec<String> {
+    if !line.contains(TLP_RED_MARKER) {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::new();
+    let mut remaining = line;
+
+    while let Some(red_pos) = remaining.find(TLP_RED_MARKER) {
+        let after_marker = &remaining[red_pos + TLP_RED_MARKER.len()..];
+
+        let mut closest: Option<(usize, usize)> = None;
+        for &tag in ALL_TLP_MARKERS {
+            if tag == TLP_RED_MARKER {
+                continue;
+            }
+            if let Some(pos) = after_marker.find(tag) {
+                match closest {
+                    None => closest = Some((pos, tag.len())),
+                    Some((prev, _)) if pos < prev => closest = Some((pos, tag.len())),
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some((pos, tag_len)) = closest {
+            let end = red_pos + TLP_RED_MARKER.len() + pos + tag_len;
+            chunks.push(remaining[red_pos..end].to_string());
+            remaining = &remaining[end..];
+        } else {
+            chunks.push(remaining[red_pos..].to_string());
+            remaining = "";
+        }
+    }
+
+    chunks
+}
+
+/// Extract all inline TLP redacted chunks from multi-line content, in order.
+/// Only processes lines that are NOT inside a block-level #tlp/red section
+/// (those are handled by `extract_tlp_blocks`).
+pub fn extract_inline_tlp_chunks(content: &str) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut in_block = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == TLP_RED_MARKER && !in_block {
+            in_block = true;
+            continue;
+        }
+        if in_block {
+            if is_tlp_boundary(trimmed) {
+                in_block = false;
+            }
+            continue;
+        }
+
+        chunks.extend(extract_inline_chunks(line));
+    }
+
+    chunks
+}
+
+/// Extract each secret pattern match from content, in document order.
+/// Run this on TLP-redacted content (same pipeline stage as `safe-read`).
+pub fn extract_secret_matches(content: &str) -> Vec<String> {
+    let re = secret_regex();
+    let mut matches = Vec::new();
+
+    for line in content.lines() {
+        for m in re.find_iter(line) {
+            matches.push(m.as_str().to_string());
+        }
+    }
+
+    matches
+}
+
+/// Restore hidden content into new text by replacing markers with originals.
+///
+/// Replaces `[REDACTED]` markers (block and inline) with TLP block/inline originals,
+/// and `[SECRET REDACTED]` markers with original secret text.
+///
+/// Block markers appear on their own line in the safe-read output.
+/// Inline markers appear within a line.
+///
+/// Returns `Err` if marker counts don't match the provided originals.
+pub fn restore_hidden(
+    new_content: &str,
+    tlp_blocks: &[String],
+    inline_chunks: &[String],
+    secrets: &[String],
+) -> Result<String, String> {
+    let mut result = Vec::new();
+    let mut block_idx = 0;
+    let mut inline_idx = 0;
+    let mut secret_idx = 0;
+
+    for line in new_content.lines() {
+        let trimmed = line.trim();
+
+        // Block-level [REDACTED] on its own line → restore full TLP block
+        if trimmed == REDACTED_MARKER {
+            if block_idx >= tlp_blocks.len() {
+                return Err(format!(
+                    "More [REDACTED] lines than TLP blocks ({} blocks available)",
+                    tlp_blocks.len()
+                ));
+            }
+            result.push(tlp_blocks[block_idx].clone());
+            block_idx += 1;
+            continue;
+        }
+
+        // Inline [REDACTED] and [SECRET REDACTED] within a line
+        let mut restored_line = line.to_string();
+
+        // Restore inline TLP chunks
+        while restored_line.contains(REDACTED_MARKER) {
+            if inline_idx >= inline_chunks.len() {
+                return Err(format!(
+                    "More inline [REDACTED] than inline TLP chunks ({} available)",
+                    inline_chunks.len()
+                ));
+            }
+            // Replace first occurrence only
+            restored_line =
+                restored_line.replacen(REDACTED_MARKER, &inline_chunks[inline_idx], 1);
+            inline_idx += 1;
+        }
+
+        // Restore secrets
+        while restored_line.contains(SECRET_MARKER) {
+            if secret_idx >= secrets.len() {
+                return Err(format!(
+                    "More [SECRET REDACTED] than secrets ({} available)",
+                    secrets.len()
+                ));
+            }
+            restored_line = restored_line.replacen(SECRET_MARKER, &secrets[secret_idx], 1);
+            secret_idx += 1;
+        }
+
+        result.push(restored_line);
+    }
+
+    // Verify all originals were used
+    if block_idx != tlp_blocks.len() {
+        return Err(format!(
+            "Only {block_idx}/{} TLP blocks restored — content has fewer [REDACTED] lines \
+             than the original file",
+            tlp_blocks.len()
+        ));
+    }
+    if inline_idx != inline_chunks.len() {
+        return Err(format!(
+            "Only {inline_idx}/{} inline TLP chunks restored",
+            inline_chunks.len()
+        ));
+    }
+    if secret_idx != secrets.len() {
+        return Err(format!(
+            "Only {secret_idx}/{} secrets restored — content has fewer [SECRET REDACTED] \
+             markers than the original file",
+            secrets.len()
+        ));
+    }
+
+    let mut output = result.join("\n");
+    if new_content.ends_with('\n') {
+        output.push('\n');
+    }
+    Ok(output)
+}
+
 /// Scan content for known secret patterns and redact them.
 /// Returns `(redacted_content, secrets_found)`.
 pub fn redact_secrets(content: &str) -> (String, bool) {

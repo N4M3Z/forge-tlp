@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Rust CLI plugin for Claude Code. Three binaries, one library crate.
+Rust CLI plugin for Claude Code. Four binaries, one library crate.
 
 ## Build & test
 
@@ -27,12 +27,14 @@ src/
   bin/
     tlp-guard.rs      # PreToolUse hook — reads JSON from stdin, exits 0/2
     safe-read.rs      # CLI — redacts then prints to stdout
+    safe-write.rs     # CLI — writes/edits preserving hidden content
     blind-metadata.rs # CLI — frontmatter ops without reading file body
 tests/
   fixtures/configs/   # .tlp config files for integration tests
   fixtures/content/   # .md content files for integration tests
   tlp_guard.rs        # integration tests for tlp-guard
   safe_read.rs        # integration tests for safe-read
+  safe_write.rs       # integration tests for safe-write
   blind_metadata.rs   # integration tests for blind-metadata
 ```
 
@@ -51,7 +53,7 @@ Classification pipeline (`tlp::classify_file`):
 
 AMBER handling differs by tool: Read is blocked (stderr suggests `safe-read`), Edit/Write are allowed with a warning. This lets the AI modify AMBER files without seeing their full content via Read.
 
-Shell wrappers in `bin/` source `_build.sh` which calls `cargo build --release` on first invocation if the binary is missing. `tlp-guard-wrapper.sh` exits 0 on build failure (graceful degradation — don't block Claude). The CLI wrappers (`safe-read`, `blind-metadata`) exit 1 on build failure.
+Shell wrappers in `bin/` source `_build.sh` which calls `cargo build --release` on first invocation if the binary is missing. `tlp-guard-wrapper.sh` exits 0 on build failure (graceful degradation — don't block Claude). The CLI wrappers (`safe-read`, `safe-write`, `blind-metadata`) exit 1 on build failure.
 
 ## Conventions
 
