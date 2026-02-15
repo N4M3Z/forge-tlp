@@ -16,7 +16,7 @@ Or build individually:
 cargo build --release --manifest-path Modules/forge-tlp/Cargo.toml
 ```
 
-Ensure the module is listed in `forge.yaml` under modules (it should be — order matters, TLP must run before forge-journals in PreToolUse):
+Ensure the module is listed in `defaults.yaml` under modules (it should be — order matters, TLP must run before forge-journals in PreToolUse):
 
 ```yaml
 modules:
