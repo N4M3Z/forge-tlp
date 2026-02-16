@@ -9,9 +9,12 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  safe-write edit <file> --old <old-string> --new <new-string>");
     eprintln!("  safe-write write <file>          (reads new content from stdin)");
+    eprintln!("  safe-write insert <file> --before <marker> --content <text>");
+    eprintln!("  safe-write insert <file> --after <marker> --content <text>");
     eprintln!();
     eprintln!("Edit: replace exactly one occurrence of old-string with new-string.");
     eprintln!("Write: overwrite entire file, preserving #tlp/red blocks and secrets.");
+    eprintln!("Insert: add text before or after a marker line (trimmed match).");
 }
 
 fn main() -> ExitCode {
@@ -35,12 +38,24 @@ fn main() -> ExitCode {
     match mode.as_str() {
         "edit" => cmd_edit(file_path, &args[3..]),
         "write" => cmd_write(file_path),
+        "insert" => cmd_insert(file_path, &args[3..]),
         _ => {
             eprintln!("Unknown mode: {mode}");
             print_usage();
             ExitCode::from(1)
         }
     }
+}
+
+// ─── Shell unescaping ───
+//
+// The Claude Code Bash tool's zsh environment escapes ! to \! even inside
+// single quotes (history expansion artifact). This means arguments like
+// '![[Daily.base]]' arrive as '\![[Daily.base]]'. We unescape here so
+// CLI callers don't need workarounds.
+
+fn unescape_shell(s: &str) -> String {
+    s.replace("\\!", "!")
 }
 
 // ─── Edit mode ───
@@ -71,14 +86,20 @@ fn cmd_edit(file_path: &str, args: &[String]) -> ExitCode {
         i += 1;
     }
 
-    let Some(old) = old_string else {
+    let Some(old_raw) = old_string else {
         eprintln!("--old is required for edit mode");
         return ExitCode::from(1);
     };
-    let Some(new) = new_string else {
+    let Some(new_raw) = new_string else {
         eprintln!("--new is required for edit mode");
         return ExitCode::from(1);
     };
+
+    // Unescape shell artifacts: zsh history expansion escapes ! to \!
+    let old_owned = unescape_shell(old_raw);
+    let new_owned = unescape_shell(new_raw);
+    let old = old_owned.as_str();
+    let new = new_owned.as_str();
 
     // Guard: reject edits targeting redacted placeholders
     if old.contains(redact::REDACTED_MARKER) || old.contains(redact::SECRET_MARKER) {
@@ -101,6 +122,10 @@ fn cmd_edit(file_path: &str, args: &[String]) -> ExitCode {
     match count {
         0 => {
             eprintln!("old_string not found in {file_path}");
+            eprintln!(
+                "Hint: if the file was modified externally, re-read with safe-read \
+                 and retry."
+            );
             ExitCode::from(1)
         }
         1 => {
@@ -114,6 +139,124 @@ fn cmd_edit(file_path: &str, args: &[String]) -> ExitCode {
         }
         n => {
             eprintln!("old_string found {n} times in {file_path} — must be unique");
+            ExitCode::from(1)
+        }
+    }
+}
+
+// ─── Insert mode ───
+//
+// Line-based insertion: find a marker line (trimmed match) and insert content
+// before or after it. Resilient to whitespace changes — the marker only needs
+// to match after trimming both sides.
+
+fn cmd_insert(file_path: &str, args: &[String]) -> ExitCode {
+    let (mut before, mut after, mut content) = (None, None, None);
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--before" => {
+                i += 1;
+                before = args.get(i).map(String::as_str);
+            }
+            "--after" => {
+                i += 1;
+                after = args.get(i).map(String::as_str);
+            }
+            "--content" => {
+                i += 1;
+                content = args.get(i).map(String::as_str);
+            }
+            other => {
+                eprintln!("Unknown flag: {other}");
+                return ExitCode::from(1);
+            }
+        }
+        i += 1;
+    }
+
+    // Validate flags
+    let marker = match (before, after) {
+        (Some(m), None) | (None, Some(m)) => m,
+        (Some(_), Some(_)) => {
+            eprintln!("Cannot use both --before and --after");
+            return ExitCode::from(1);
+        }
+        (None, None) => {
+            eprintln!("--before or --after is required for insert mode");
+            return ExitCode::from(1);
+        }
+    };
+    let insert_before = before.is_some();
+
+    let Some(text_raw) = content else {
+        eprintln!("--content is required for insert mode");
+        return ExitCode::from(1);
+    };
+
+    // Unescape shell artifacts: zsh history expansion escapes ! to \!
+    let marker_owned = unescape_shell(marker);
+    let marker = marker_owned.as_str();
+    let text_owned = unescape_shell(text_raw);
+    let text = text_owned.as_str();
+
+    // Guard: reject content containing redaction markers
+    if text.contains(redact::REDACTED_MARKER) || text.contains(redact::SECRET_MARKER) {
+        eprintln!(
+            "content contains redaction markers — cannot insert hidden content. \
+             Use safe-read to view what's visible, then insert only visible text."
+        );
+        return ExitCode::from(1);
+    }
+
+    let file_content = match fs::read_to_string(file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Cannot read {file_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let lines: Vec<&str> = file_content.lines().collect();
+    let trimmed_marker = marker.trim();
+    let matches: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.trim() == trimmed_marker)
+        .map(|(idx, _)| idx)
+        .collect();
+
+    match matches.len() {
+        0 => {
+            eprintln!("marker not found in {file_path}");
+            ExitCode::from(1)
+        }
+        1 => {
+            let idx = matches[0];
+            let mut result = Vec::with_capacity(lines.len() + 1);
+            for (i, line) in lines.iter().enumerate() {
+                if i == idx && insert_before {
+                    result.push(text);
+                }
+                result.push(line);
+                if i == idx && !insert_before {
+                    result.push(text);
+                }
+            }
+            // Preserve trailing newline if original had one
+            let mut output = result.join("\n");
+            if file_content.ends_with('\n') {
+                output.push('\n');
+            }
+            if let Err(e) = fs::write(file_path, &output) {
+                eprintln!("Cannot write {file_path}: {e}");
+                return ExitCode::from(1);
+            }
+            println!("{file_path}");
+            ExitCode::SUCCESS
+        }
+        n => {
+            eprintln!("marker found {n} times in {file_path} — must be unique");
             ExitCode::from(1)
         }
     }

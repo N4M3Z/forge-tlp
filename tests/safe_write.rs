@@ -92,7 +92,14 @@ fn edit_replaces_unique_string() {
 
     Command::cargo_bin("safe-write")
         .unwrap()
-        .args(["edit", file.to_str().unwrap(), "--old", "Hello world.", "--new", "Goodbye world."])
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--old",
+            "Hello world.",
+            "--new",
+            "Goodbye world.",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains(file.to_str().unwrap()));
@@ -110,7 +117,14 @@ fn edit_fails_on_missing_string() {
 
     Command::cargo_bin("safe-write")
         .unwrap()
-        .args(["edit", file.to_str().unwrap(), "--old", "nonexistent", "--new", "replacement"])
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--old",
+            "nonexistent",
+            "--new",
+            "replacement",
+        ])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("not found"));
@@ -125,7 +139,14 @@ fn edit_fails_on_ambiguous_string() {
 
     Command::cargo_bin("safe-write")
         .unwrap()
-        .args(["edit", file.to_str().unwrap(), "--old", "AAA", "--new", "CCC"])
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--old",
+            "AAA",
+            "--new",
+            "CCC",
+        ])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("2 times"));
@@ -850,4 +871,358 @@ fn edit_works_on_file_outside_vault() {
         .success();
 
     assert_eq!(fs::read_to_string(&file).unwrap(), "Goodbye world.\n");
+}
+
+// ─── Edit mode: re-read hint ───
+
+#[test]
+fn edit_not_found_shows_reread_hint() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_PLAIN).unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--old",
+            "nonexistent text",
+            "--new",
+            "replacement",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("not found in"))
+        .stderr(predicate::str::contains("re-read with safe-read"));
+}
+
+// ─── Insert mode: basic ───
+
+#[test]
+fn insert_before_marker() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Line 1\n![[Daily.base]]\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "![[Daily.base]]",
+            "--content",
+            "New entry",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(file.to_str().unwrap()));
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "Line 1\nNew entry\n![[Daily.base]]\n");
+}
+
+#[test]
+fn insert_after_marker() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "## Log\nExisting entry\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--after",
+            "## Log",
+            "--content",
+            "New entry",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "## Log\nNew entry\nExisting entry\n");
+}
+
+#[test]
+fn insert_trimmed_match() {
+    // Marker in file has leading/trailing whitespace, --before value doesn't
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Line 1\n  ![[Daily.base]]  \nLine 3\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "![[Daily.base]]",
+            "--content",
+            "Inserted",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert!(result.contains("Inserted\n  ![[Daily.base]]  \n"));
+}
+
+#[test]
+fn insert_multiline_content() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Top\n![[embed]]\nBottom\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "![[embed]]",
+            "--content",
+            "Line A\nLine B",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "Top\nLine A\nLine B\n![[embed]]\nBottom\n");
+}
+
+// ─── Insert mode: errors ───
+
+#[test]
+fn insert_marker_not_found() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Line 1\nLine 2\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "nonexistent marker",
+            "--content",
+            "text",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("marker not found"));
+}
+
+#[test]
+fn insert_marker_ambiguous() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "marker\nother\nmarker\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "marker",
+            "--content",
+            "text",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("2 times"));
+}
+
+#[test]
+fn insert_refuses_red_file() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join(".tlp"), "**/*.md RED\n").unwrap();
+    let file = dir.path().join("secret.md");
+    fs::write(&file, CONTENT_FRONTMATTER_RED).unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "inaccessible",
+            "--content",
+            "text",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("TLP:RED"));
+}
+
+#[test]
+fn insert_rejects_redaction_markers_in_content() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Line 1\nmarker\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "marker",
+            "--content",
+            "[REDACTED]",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("redaction markers"));
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--after",
+            "marker",
+            "--content",
+            "[SECRET REDACTED]",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("redaction markers"));
+}
+
+#[test]
+fn insert_missing_position_flag() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "content\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args(["insert", file.to_str().unwrap(), "--content", "text"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("--before or --after is required"));
+}
+
+#[test]
+fn insert_both_position_flags() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "marker\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "marker",
+            "--after",
+            "marker",
+            "--content",
+            "text",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("Cannot use both"));
+}
+
+// ─── Shell unescaping: \! → ! ───
+
+#[test]
+fn insert_unescapes_bang_in_marker() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Top\n![[Daily.base]]\nBottom\n").unwrap();
+
+    // Simulate what the shell delivers: \! instead of !
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "\\![[Daily.base]]",
+            "--content",
+            "Inserted line",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "Top\nInserted line\n![[Daily.base]]\nBottom\n");
+}
+
+#[test]
+fn insert_unescapes_bang_in_content() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Top\nmarker\nBottom\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--after",
+            "marker",
+            "--content",
+            "\\![[embed]]",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "Top\nmarker\n![[embed]]\nBottom\n");
+}
+
+#[test]
+fn edit_unescapes_bang_in_old_and_new() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Before ![[old-embed]] after.\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--old",
+            "\\![[old-embed]]",
+            "--new",
+            "\\![[new-embed]]",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "Before ![[new-embed]] after.\n");
+}
+
+#[test]
+fn insert_literal_bang_still_works() {
+    // Unescaped ! should work directly (no \! prefix)
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "![[embed]]\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "![[embed]]",
+            "--content",
+            "New line",
+        ])
+        .assert()
+        .success();
+
+    let result = fs::read_to_string(&file).unwrap();
+    assert_eq!(result, "New line\n![[embed]]\n");
 }

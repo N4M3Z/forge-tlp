@@ -366,8 +366,7 @@ pub fn restore_hidden(
                 ));
             }
             // Replace first occurrence only
-            restored_line =
-                restored_line.replacen(REDACTED_MARKER, &inline_chunks[inline_idx], 1);
+            restored_line = restored_line.replacen(REDACTED_MARKER, &inline_chunks[inline_idx], 1);
             inline_idx += 1;
         }
 

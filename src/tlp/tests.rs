@@ -125,6 +125,9 @@ fn test_double_star_matches_everything() {
 fn test_double_star_as_green_catchall() {
     let config = "AMBER:\n  - \"Players/**\"\n\nGREEN:\n  - \"**\"\n";
     assert_eq!(classify(Path::new("Players/card.md"), config), Tlp::Amber);
-    assert_eq!(classify(Path::new("Campaigns/scene.md"), config), Tlp::Green);
+    assert_eq!(
+        classify(Path::new("Campaigns/scene.md"), config),
+        Tlp::Green
+    );
     assert_eq!(classify(Path::new("anything.md"), config), Tlp::Green);
 }

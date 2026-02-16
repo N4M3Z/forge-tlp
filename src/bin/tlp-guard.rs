@@ -54,10 +54,7 @@ fn main() -> ExitCode {
                 );
                 ExitCode::SUCCESS
             } else {
-                eprintln!(
-                    "TLP:RED — access blocked for: {}",
-                    classification.rel_path
-                );
+                eprintln!("TLP:RED — access blocked for: {}", classification.rel_path);
                 ExitCode::from(2)
             }
         }
