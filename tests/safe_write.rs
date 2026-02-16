@@ -680,6 +680,50 @@ fn write_roundtrip_complex_preserves_original() {
     assert_eq!(result, CONTENT_WITH_BLOCK_AND_SECRET);
 }
 
+// ─── Write mode: rejects extra arguments ───
+
+#[test]
+fn write_rejects_extra_flags() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Original content.\n").unwrap();
+
+    // --content flag doesn't exist for write mode
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "write",
+            file.to_str().unwrap(),
+            "--content",
+            "Sneaky content",
+        ])
+        .write_stdin("Stdin content.\n")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("write mode takes no flags"));
+
+    // Original file must be untouched
+    assert_eq!(fs::read_to_string(&file).unwrap(), "Original content.\n");
+}
+
+#[test]
+fn write_rejects_extra_positional_args() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Original.\n").unwrap();
+
+    // Extra positional arg after file path
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args(["write", file.to_str().unwrap(), "--stdin"])
+        .write_stdin("Content.\n")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("write mode takes no flags"));
+
+    assert_eq!(fs::read_to_string(&file).unwrap(), "Original.\n");
+}
+
 // ─── Edit mode: edge cases ───
 
 #[test]

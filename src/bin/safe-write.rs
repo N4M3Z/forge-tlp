@@ -37,7 +37,17 @@ fn main() -> ExitCode {
 
     match mode.as_str() {
         "edit" => cmd_edit(file_path, &args[3..]),
-        "write" => cmd_write(file_path),
+        "write" => {
+            if args.len() > 3 {
+                eprintln!(
+                    "write mode takes no flags (content is read from stdin).\n\
+                     Usage: safe-write write <file>  (pipe content via stdin)\n\
+                     Example: cat <<'EOF' | safe-write write path/to/file.md"
+                );
+                return ExitCode::from(1);
+            }
+            cmd_write(file_path)
+        }
         "insert" => cmd_insert(file_path, &args[3..]),
         _ => {
             eprintln!("Unknown mode: {mode}");
