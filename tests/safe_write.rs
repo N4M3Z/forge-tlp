@@ -1270,3 +1270,223 @@ fn insert_literal_bang_still_works() {
     let result = fs::read_to_string(&file).unwrap();
     assert_eq!(result, "New line\n![[embed]]\n");
 }
+
+// ─── Diff output ───
+
+#[test]
+fn edit_prints_diff_to_stderr() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_PLAIN).unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--old",
+            "Hello world.",
+            "--new",
+            "Goodbye world.",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("---"))
+        .stderr(predicate::str::contains("+++"))
+        .stderr(predicate::str::contains("@@"))
+        .stderr(predicate::str::contains("-Hello world."))
+        .stderr(predicate::str::contains("+Goodbye world."));
+}
+
+#[test]
+fn insert_prints_diff_to_stderr() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Line 1\n![[Daily.base]]\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "--before",
+            "![[Daily.base]]",
+            "--content",
+            "Inserted text",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("@@"))
+        .stderr(predicate::str::contains("+Inserted text"));
+}
+
+#[test]
+fn write_prints_diff_to_stderr() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Original line.\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args(["write", file.to_str().unwrap()])
+        .write_stdin("Modified line.\n")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("---"))
+        .stderr(predicate::str::contains("+++"))
+        .stderr(predicate::str::contains("@@"));
+}
+
+#[test]
+fn write_diff_shows_safe_read_view() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_WITH_TLP_BLOCK).unwrap();
+
+    let new_content = "\
+---
+title: Test
+tlp: amber
+---
+
+Modified top.
+[REDACTED]
+Modified bottom.
+";
+
+    let output = Command::cargo_bin("safe-write")
+        .unwrap()
+        .args(["write", file.to_str().unwrap()])
+        .write_stdin(new_content)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Diff should show [REDACTED] markers, not actual secrets
+    assert!(stderr.contains("[REDACTED]") || stderr.contains("Modified"));
+    assert!(!stderr.contains("This is secret line A."));
+    assert!(!stderr.contains("This is secret line B."));
+}
+
+// ─── Quiet flag ───
+
+#[test]
+fn edit_quiet_suppresses_diff() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_PLAIN).unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--quiet",
+            "--old",
+            "Hello world.",
+            "--new",
+            "Goodbye world.",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("@@").not());
+}
+
+#[test]
+fn write_quiet_suppresses_diff() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_WITH_TLP_BLOCK).unwrap();
+
+    let new_content = "\
+---
+title: Test
+tlp: amber
+---
+
+Modified top.
+[REDACTED]
+Modified bottom.
+";
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args(["write", file.to_str().unwrap(), "-q"])
+        .write_stdin(new_content)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("@@").not())
+        // "Restored" message should still appear even when quiet
+        .stderr(predicate::str::contains("Restored 1 TLP block(s)"));
+}
+
+#[test]
+fn insert_quiet_suppresses_diff() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Line 1\nmarker\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "insert",
+            file.to_str().unwrap(),
+            "-q",
+            "--after",
+            "marker",
+            "--content",
+            "New line",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("@@").not());
+}
+
+// ─── No-change roundtrip produces no diff ───
+
+#[test]
+fn write_roundtrip_no_diff() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, "Unchanged content.\n").unwrap();
+
+    Command::cargo_bin("safe-write")
+        .unwrap()
+        .args(["write", file.to_str().unwrap()])
+        .write_stdin("Unchanged content.\n")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("@@").not());
+}
+
+// ─── Human-readable diff format ───
+
+#[test]
+fn edit_human_flag() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("test.md");
+    fs::write(&file, CONTENT_PLAIN).unwrap();
+
+    let output = Command::cargo_bin("safe-write")
+        .unwrap()
+        .args([
+            "edit",
+            file.to_str().unwrap(),
+            "--human",
+            "--old",
+            "Hello world.",
+            "--new",
+            "Goodbye world.",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Human format uses :N line numbers, not @@ hunks
+    assert!(stderr.contains(":"), "expected line number prefix ':'");
+    assert!(stderr.contains("- Hello world.") || stderr.contains("-Hello world."));
+    assert!(stderr.contains("+ Goodbye world.") || stderr.contains("+Goodbye world."));
+    assert!(!stderr.contains("@@"), "human format should not contain @@");
+}

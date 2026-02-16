@@ -1,5 +1,6 @@
 use context_tlp::redact;
 use context_tlp::tlp;
+use similar::{ChangeTag, TextDiff};
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -15,6 +16,60 @@ fn print_usage() {
     eprintln!("Edit: replace exactly one occurrence of old-string with new-string.");
     eprintln!("Write: overwrite entire file, preserving #tlp/red blocks and secrets.");
     eprintln!("Insert: add text before or after a marker line (trimmed match).");
+    eprintln!();
+    eprintln!("Global flags (all modes):");
+    eprintln!("  --quiet, -q    Suppress diff output on stderr");
+    eprintln!("  --human, -H    Compact human-readable diff (default: unified diff)");
+}
+
+// ─── Diff output ───
+
+fn emit_diff(old: &str, new: &str, label: &str, human: bool) {
+    if human {
+        print_diff_human(old, new);
+    } else {
+        print_diff_unified(old, new, label);
+    }
+}
+
+fn print_diff_unified(old: &str, new: &str, label: &str) {
+    let diff = TextDiff::from_lines(old, new);
+    if (diff.ratio() - 1.0).abs() < f32::EPSILON {
+        return;
+    }
+    eprint!(
+        "{}",
+        diff.unified_diff()
+            .context_radius(3)
+            .header(&format!("a/{label}"), &format!("b/{label}"))
+    );
+}
+
+fn print_diff_human(old: &str, new: &str) {
+    let diff = TextDiff::from_lines(old, new);
+    if (diff.ratio() - 1.0).abs() < f32::EPSILON {
+        return;
+    }
+    for (i, group) in diff.grouped_ops(3).iter().enumerate() {
+        if i > 0 {
+            eprintln!();
+        }
+        let start = group.first().map_or(1, |op| op.old_range().start + 1);
+        eprintln!(":{start}");
+        for op in group {
+            for change in diff.iter_changes(op) {
+                let marker = match change.tag() {
+                    ChangeTag::Equal => "  ",
+                    ChangeTag::Delete => "- ",
+                    ChangeTag::Insert => "+ ",
+                };
+                eprint!("{marker}{change}");
+                if change.missing_newline() {
+                    eprintln!();
+                }
+            }
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -27,6 +82,19 @@ fn main() -> ExitCode {
     let mode = &args[1];
     let file_path = &args[2];
 
+    // Extract global flags before mode dispatch
+    let remaining: Vec<String> = args[3..]
+        .iter()
+        .filter(|a| !matches!(a.as_str(), "--quiet" | "-q" | "--human" | "-H"))
+        .cloned()
+        .collect();
+    let quiet = args[3..]
+        .iter()
+        .any(|a| matches!(a.as_str(), "--quiet" | "-q"));
+    let human = args[3..]
+        .iter()
+        .any(|a| matches!(a.as_str(), "--human" | "-H"));
+
     // TLP gate: refuse RED files
     if let Some(c) = tlp::classify_file(file_path) {
         if c.level == tlp::Tlp::Red {
@@ -36,9 +104,9 @@ fn main() -> ExitCode {
     }
 
     match mode.as_str() {
-        "edit" => cmd_edit(file_path, &args[3..]),
+        "edit" => cmd_edit(file_path, &remaining, quiet, human),
         "write" => {
-            if args.len() > 3 {
+            if !remaining.is_empty() {
                 eprintln!(
                     "write mode takes no flags (content is read from stdin).\n\
                      Usage: safe-write write <file>  (pipe content via stdin)\n\
@@ -46,9 +114,9 @@ fn main() -> ExitCode {
                 );
                 return ExitCode::from(1);
             }
-            cmd_write(file_path)
+            cmd_write(file_path, quiet, human)
         }
-        "insert" => cmd_insert(file_path, &args[3..]),
+        "insert" => cmd_insert(file_path, &remaining, quiet, human),
         _ => {
             eprintln!("Unknown mode: {mode}");
             print_usage();
@@ -75,7 +143,7 @@ fn unescape_shell(s: &str) -> String {
 // is identical between the original and safe-read view. So old_string matches
 // the original directly — as long as it doesn't span redacted content.
 
-fn cmd_edit(file_path: &str, args: &[String]) -> ExitCode {
+fn cmd_edit(file_path: &str, args: &[String], quiet: bool, human: bool) -> ExitCode {
     let (mut old_string, mut new_string) = (None, None);
     let mut i = 0;
     while i < args.len() {
@@ -144,6 +212,9 @@ fn cmd_edit(file_path: &str, args: &[String]) -> ExitCode {
                 eprintln!("Cannot write {file_path}: {e}");
                 return ExitCode::from(1);
             }
+            if !quiet {
+                emit_diff(&content, &result, file_path, human);
+            }
             println!("{file_path}");
             ExitCode::SUCCESS
         }
@@ -160,7 +231,7 @@ fn cmd_edit(file_path: &str, args: &[String]) -> ExitCode {
 // before or after it. Resilient to whitespace changes — the marker only needs
 // to match after trimming both sides.
 
-fn cmd_insert(file_path: &str, args: &[String]) -> ExitCode {
+fn parse_insert_args(args: &[String]) -> Result<(bool, &str, &str), ExitCode> {
     let (mut before, mut after, mut content) = (None, None, None);
     let mut i = 0;
     while i < args.len() {
@@ -179,33 +250,36 @@ fn cmd_insert(file_path: &str, args: &[String]) -> ExitCode {
             }
             other => {
                 eprintln!("Unknown flag: {other}");
-                return ExitCode::from(1);
+                return Err(ExitCode::from(1));
             }
         }
         i += 1;
     }
-
-    // Validate flags
     let marker = match (before, after) {
         (Some(m), None) | (None, Some(m)) => m,
         (Some(_), Some(_)) => {
             eprintln!("Cannot use both --before and --after");
-            return ExitCode::from(1);
+            return Err(ExitCode::from(1));
         }
         (None, None) => {
             eprintln!("--before or --after is required for insert mode");
-            return ExitCode::from(1);
+            return Err(ExitCode::from(1));
         }
     };
-    let insert_before = before.is_some();
-
-    let Some(text_raw) = content else {
+    let Some(text) = content else {
         eprintln!("--content is required for insert mode");
-        return ExitCode::from(1);
+        return Err(ExitCode::from(1));
+    };
+    Ok((before.is_some(), marker, text))
+}
+
+fn cmd_insert(file_path: &str, args: &[String], quiet: bool, human: bool) -> ExitCode {
+    let (insert_before, marker_raw, text_raw) = match parse_insert_args(args) {
+        Ok(v) => v,
+        Err(code) => return code,
     };
 
-    // Unescape shell artifacts: zsh history expansion escapes ! to \!
-    let marker_owned = unescape_shell(marker);
+    let marker_owned = unescape_shell(marker_raw);
     let marker = marker_owned.as_str();
     let text_owned = unescape_shell(text_raw);
     let text = text_owned.as_str();
@@ -262,6 +336,9 @@ fn cmd_insert(file_path: &str, args: &[String]) -> ExitCode {
                 eprintln!("Cannot write {file_path}: {e}");
                 return ExitCode::from(1);
             }
+            if !quiet {
+                emit_diff(&file_content, &output, file_path, human);
+            }
             println!("{file_path}");
             ExitCode::SUCCESS
         }
@@ -285,7 +362,7 @@ fn cmd_insert(file_path: &str, args: &[String]) -> ExitCode {
 //   4. Replace markers in new content with original hidden chunks
 //   5. Write the merged result to disk
 
-fn cmd_write(file_path: &str) -> ExitCode {
+fn cmd_write(file_path: &str, quiet: bool, human: bool) -> ExitCode {
     let mut new_content = String::new();
     if let Err(e) = io::stdin().read_to_string(&mut new_content) {
         eprintln!("Cannot read stdin: {e}");
@@ -338,6 +415,9 @@ fn cmd_write(file_path: &str) -> ExitCode {
             eprintln!("Cannot write {file_path}: {e}");
             return ExitCode::from(1);
         }
+        if !quiet {
+            emit_diff(&original, &new_content, file_path, human);
+        }
         println!("{file_path}");
         return ExitCode::SUCCESS;
     }
@@ -348,6 +428,15 @@ fn cmd_write(file_path: &str) -> ExitCode {
             if let Err(e) = fs::write(file_path, &merged) {
                 eprintln!("Cannot write {file_path}: {e}");
                 return ExitCode::from(1);
+            }
+            if !quiet {
+                // Diff the safe-read view (with [REDACTED] markers), not raw secrets
+                let safe_view = {
+                    let tlp_redacted = redact::redact_tlp_sections(&original);
+                    let (view, _) = redact::redact_secrets(&tlp_redacted);
+                    view
+                };
+                emit_diff(&safe_view, &new_content, file_path, human);
             }
             eprintln!(
                 "Restored {} TLP block(s), {} inline chunk(s), {} secret(s)",
