@@ -116,5 +116,4 @@ Text with [REDACTED]
 - `/SafeRead` — runtime redaction tools (`safe-read`, `blind-metadata`)
 - `/SecretScan` — commit-time secret scanning with gitleaks
 
-!`"${CLAUDE_PLUGIN_ROOT}/hooks/skill-load.sh" 2>/dev/null`
-!`"${CLAUDE_PLUGIN_ROOT}/Modules/forge-tlp/hooks/skill-load.sh" 2>/dev/null`
+!`dispatch skill-load forge-tlp`

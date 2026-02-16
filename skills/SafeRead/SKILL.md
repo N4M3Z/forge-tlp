@@ -80,5 +80,4 @@ blind-metadata get Resources/Journals tlp
 - `/TLP` — classification rules, `.tlp` config, frontmatter overrides
 - `/SecretScan` — commit-time secret scanning with gitleaks
 
-!`"${CLAUDE_PLUGIN_ROOT}/hooks/skill-load.sh" 2>/dev/null`
-!`"${CLAUDE_PLUGIN_ROOT}/Modules/forge-tlp/hooks/skill-load.sh" 2>/dev/null`
+!`dispatch skill-load forge-tlp`
