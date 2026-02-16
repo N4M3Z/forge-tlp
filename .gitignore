@@ -4,8 +4,10 @@
 # User config override (defaults.yaml is the checked-in default)
 config.yaml
 
-# Claude Code
+# AI agent local state
 .claude/
+.gemini/
+.copilot/
 
 # Rust
 target/

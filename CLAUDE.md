@@ -53,7 +53,28 @@ Classification pipeline (`tlp::classify_file`):
 
 AMBER handling differs by tool: Read is blocked (stderr suggests `safe-read`), Edit/Write are allowed with a warning. This lets the AI modify AMBER files without seeing their full content via Read.
 
-Shell wrappers in `bin/` source `_build.sh` which calls `cargo build --release` on first invocation if the binary is missing. `tlp-guard-wrapper.sh` exits 0 on build failure (graceful degradation — don't block Claude). The CLI wrappers (`safe-read`, `safe-write`, `blind-metadata`) exit 1 on build failure.
+### Redaction pipeline
+
+`safe-read` chains two stages in order — `safe-write` inverts the same pipeline:
+
+1. **TLP redaction** (`redact_tlp_sections`) — strips `#tlp/red` blocks (block-mode and inline-mode), replaces with `[REDACTED]`
+2. **Secret redaction** (`redact_secrets`) — runs regex patterns from `SECRET_PATTERNS` on the TLP-redacted output, replaces matches with `[SECRET REDACTED]`
+
+`safe-write write` reverses this: extracts hidden chunks from the original file (`extract_tlp_blocks`, `extract_inline_tlp_chunks`, `extract_secret_matches`), then `restore_hidden` replaces markers in the new content with the originals. Marker counts must match exactly or the write is refused.
+
+### safe-write modes
+
+- **edit**: `safe-write edit <file> --old <str> --new <str>` — string replacement on original file content (not the safe-read view). Old string must be unique and must not contain redaction markers.
+- **write**: `safe-write write <file>` — full file overwrite from stdin. Preserves hidden `#tlp/red` blocks and secrets by extracting them from the original and restoring markers in the new content.
+- **insert**: `safe-write insert <file> --before|--after <marker> --content <text>` — line-based insertion using trimmed marker matching.
+
+All modes unescape `\!` → `!` in arguments (zsh history expansion artifact from Claude Code's Bash tool).
+
+### Shell wrappers and hook dual-mode
+
+Shell wrappers in `bin/` source `_build.sh` which calls `cargo build --release` on first invocation if the binary is missing. The CLI wrappers (`safe-read`, `safe-write`, `blind-metadata`) exit 1 on build failure.
+
+The hook (`hooks/pre-tool-use.sh`) works in two modes: standalone plugin (`CLAUDE_PLUGIN_ROOT`) or forge-core module (`FORGE_MODULE_ROOT`). On build failure, the hook exits 0 (graceful degradation — don't block Claude).
 
 ## Conventions
 
