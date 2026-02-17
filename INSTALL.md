@@ -82,6 +82,9 @@ Setting `events: []` disables all hooks for this module.
 | Dependency | Required | Purpose |
 |-----------|----------|---------|
 | Rust + cargo | Yes | Build the 3 binaries |
+| [safety-net](https://github.com/kenryu42/claude-code-safety-net) | Recommended | Blocks destructive commands — see [root INSTALL.md](../../INSTALL.md#recommended-security-tools) |
+| shellcheck | Recommended | `brew install shellcheck` — shell script linting |
+| semgrep | Recommended | `brew install semgrep` — OWASP static analysis for Rust |
 
 No external runtime dependencies. All pattern matching is compiled into the binaries.
 
