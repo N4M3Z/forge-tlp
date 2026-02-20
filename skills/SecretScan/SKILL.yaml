@@ -1,0 +1,5 @@
+name: SecretScan
+description: Commit-time secret scanning with gitleaks — prevent credentials and PII from entering git history. USE WHEN scanning for leaked secrets, setting up pre-commit hooks, or auditing repositories for credentials.
+
+claude:
+    argument-hint: "[repo path or scan target]"

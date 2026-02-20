@@ -1,0 +1,19 @@
+# forge-tlp default configuration.
+# Override: create config.yaml (gitignored) with only the fields you want to change.
+
+# Skill allowlists (provider-keyed, used by install-skills)
+skills:
+    claude:
+        SafeRead:
+        SecretScan:
+        TLP:
+
+    gemini:
+        SafeRead:
+        SecretScan:
+        TLP:
+
+    codex:
+        SafeRead:
+        SecretScan:
+        TLP:

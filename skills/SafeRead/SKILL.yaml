@@ -1,0 +1,5 @@
+name: SafeRead
+description: Runtime redaction tools — safe-read strips secrets and #tlp/red sections, blind-metadata edits frontmatter without reading content. USE WHEN reading AMBER files, redacting secrets, or managing frontmatter on protected files.
+
+claude:
+    argument-hint: "[file path to safe-read or blind-metadata operation]"

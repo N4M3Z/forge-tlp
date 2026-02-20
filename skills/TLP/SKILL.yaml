@@ -1,0 +1,5 @@
+name: TLP
+description: TLP file access control — RED/AMBER/GREEN/CLEAR classification, .tlp config, frontmatter overrides. USE WHEN accessing protected files or configuring file access policies.
+
+claude:
+    argument-hint: "[file path or classification question]"
