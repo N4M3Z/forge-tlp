@@ -1,0 +1,1 @@
+TLP is active. File access levels: RED (blocked), AMBER (read via safe-read only, edit/write allowed), GREEN/CLEAR (open). The tlp-guard hook enforces this automatically. Use standard Edit/Write tools for all writes — safe-write is only needed when editing existing files that contain `#tlp/red` hidden blocks.
