@@ -1,6 +1,5 @@
 # forge-tlp — build, test, lint, install, verify
 
-SKILLS   = SafeRead SecretScan TLP
 SKILL_SRC = skills
 LIB_DIR  = $(or $(FORGE_LIB),lib)
 
